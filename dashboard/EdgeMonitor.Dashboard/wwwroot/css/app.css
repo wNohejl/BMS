@@ -1,0 +1,261 @@
+:root {
+    --bg: #f4f6f8;
+    --panel: #ffffff;
+    --ink: #1d2733;
+    --muted: #64748b;
+    --accent: #0f6cbd;
+    --ok: #15803d;
+    --warn: #b45309;
+    --danger: #b91c1c;
+    --border: #e2e8f0;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+}
+
+.loading-screen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    color: var(--muted);
+    font-size: 1.1rem;
+}
+
+/* Layout chrome comes from MudBlazor (MudLayout/MudAppBar/MudDrawer).
+   This file keeps only the custom component styles below. */
+
+h1 { margin-top: 0; font-size: 1.6rem; }
+h2 { font-size: 1.15rem; margin-top: 2rem; }
+
+/* Home page summary strip */
+.page-header { margin-bottom: 1rem; }
+
+.summary-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.summary-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.9rem 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.summary-label { color: var(--muted); font-size: 0.8rem; }
+.summary-value { font-size: 1.5rem; font-weight: 650; }
+
+.zone-section h2 { margin-top: 1.5rem; margin-bottom: 0.75rem; }
+
+.home-alerts { margin-bottom: 1.25rem; }
+
+.empty-state {
+    background: var(--panel);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    color: var(--muted);
+}
+
+.tile-icon { font-size: 1.1rem; }
+
+.chart-frame { margin-top: 1rem; }
+
+.gridline { stroke: var(--border); stroke-width: 1; }
+.chart-line { stroke: var(--accent); stroke-width: 2; }
+.chart-area { fill: var(--accent); opacity: 0.12; }
+
+/* Digital twin floor plan */
+.floor-plan {
+    width: 100%;
+    max-width: 640px;
+    height: auto;
+    margin-bottom: 0.75rem;
+}
+
+.plan-name { font-size: 14px; font-weight: 600; fill: #1d2733; }
+.plan-temp { font-size: 12px; fill: #475569; }
+
+.chart-timespan {
+    display: flex;
+    justify-content: space-between;
+    color: var(--muted);
+    font-size: 0.8rem;
+    margin-top: 0.2rem;
+}
+
+.connection-status { font-size: 0.9rem; }
+.connection-status.live { color: var(--ok); }
+.connection-status.connecting { color: var(--muted); }
+
+.error { color: var(--danger); }
+.hint { color: var(--muted); font-size: 0.9rem; }
+
+/* Sensor tiles */
+.tile-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1rem;
+}
+
+.sensor-tile {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--ok);
+    border-radius: 8px;
+    padding: 1rem 1.15rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.sensor-tile.warn { border-left-color: var(--warn); }
+
+.tile-zone { color: var(--muted); font-size: 0.85rem; }
+.tile-value { font-size: 1.9rem; font-weight: 650; }
+.tile-status { font-size: 0.9rem; color: var(--ok); }
+.sensor-tile.warn .tile-status { color: var(--warn); }
+.tile-time { font-size: 0.75rem; color: var(--muted); }
+
+/* Chart */
+.telemetry-chart {
+    width: 100%;
+    height: 240px;
+    color: var(--accent);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-top: 1rem;
+}
+
+.chart-legend {
+    display: flex;
+    gap: 1.5rem;
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-top: 0.4rem;
+}
+
+.chart-empty { color: var(--muted); }
+
+.filter-row { display: flex; gap: 1.25rem; flex-wrap: wrap; }
+
+.filter-row label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+}
+
+select, input {
+    padding: 0.45rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--panel);
+    font: inherit;
+    color: var(--ink);
+}
+
+/* Energy cost widget */
+.cost-widget {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.15rem 1.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    max-width: 420px;
+}
+
+.cost-widget .label { color: var(--muted); font-size: 0.85rem; }
+.cost-widget .delta { font-size: 1.7rem; font-weight: 650; }
+.cost-widget .delta.higher { color: var(--danger); }
+.cost-widget .delta.lower { color: var(--ok); }
+.cost-widget .detail { color: var(--muted); font-size: 0.8rem; }
+
+/* Alerts */
+.alert-list { display: flex; flex-direction: column; gap: 0.6rem; }
+
+.alert-badge {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+    background: #fff7ed;
+    border: 1px solid #fdba74;
+    border-radius: 8px;
+    padding: 0.8rem 1rem;
+}
+
+.alert-icon { font-size: 1.2rem; }
+.alert-body { display: flex; flex-direction: column; gap: 0.15rem; }
+.alert-message { font-weight: 550; }
+.alert-time { font-size: 0.78rem; color: var(--muted); }
+
+.alert-form {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+}
+
+.alert-form input[type="number"] { width: 90px; }
+
+button {
+    padding: 0.5rem 1rem;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font: inherit;
+    cursor: pointer;
+}
+
+button:hover { filter: brightness(1.08); }
+
+.link-button {
+    background: none;
+    color: var(--danger);
+    padding: 0;
+    text-decoration: underline;
+}
+
+.rule-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+
+.rule-list li {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.7rem 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+#blazor-error-ui {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: #fde68a;
+    padding: 0.6rem 1.25rem;
+    z-index: 1000;
+}

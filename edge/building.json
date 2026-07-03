@@ -1,0 +1,9 @@
+{
+  "name": "Demo Office Building",
+  "zones": [
+    { "id": "zone-1", "name": "Lobby",           "floor": 1, "initialTempF": 74.0, "basePowerKw": 0.8, "leakFactor": 1.6 },
+    { "id": "zone-2", "name": "Conference Room", "floor": 1, "initialTempF": 76.5, "basePowerKw": 0.5, "leakFactor": 1.0 },
+    { "id": "zone-3", "name": "Office 201",      "floor": 2, "initialTempF": 73.0, "basePowerKw": 0.6, "leakFactor": 0.8 },
+    { "id": "zone-4", "name": "Server Room",     "floor": 2, "initialTempF": 78.0, "basePowerKw": 2.4, "leakFactor": 0.5 }
+  ]
+}

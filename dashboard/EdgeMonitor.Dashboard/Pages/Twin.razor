@@ -1,0 +1,357 @@
+@page "/twin"
+@implements IDisposable
+@inject ApiClient Api
+@inject SignalRService SignalR
+@inject ISnackbar Snackbar
+
+<PageTitle>EdgeMonitor — Digital twin</PageTitle>
+
+<MudText Typo="Typo.h4" GutterBottom="true">Digital twin</MudText>
+<MudText Typo="Typo.body2" Class="mb-4">
+    Intentionally break the building and watch it react: inject a fault below, then
+    watch the engine's alarms, control decisions, and recovery happen in real time.
+    The alarm monitor is never told which fault you injected — it detects the symptoms.
+</MudText>
+
+@if (_loadError is not null)
+{
+    <MudAlert Severity="Severity.Error">Couldn't reach the API: @_loadError</MudAlert>
+}
+else
+{
+    @if (_scenarios.Count > 0)
+    {
+        <MudText Typo="Typo.h6" Class="mb-2">Scripted scenarios</MudText>
+        <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap" Class="mb-4">
+            @foreach (var scenario in _scenarios)
+            {
+                <MudTooltip Text="@scenario.Description">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.PlayArrow"
+                               OnClick="() => RunScenarioAsync(scenario)">
+                        @scenario.Title
+                    </MudButton>
+                </MudTooltip>
+            }
+            <MudTooltip Text="Re-drive the engine with the commands from the last 10 minutes">
+                <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.Replay" OnClick="ReplayAsync">
+                    Replay last 10 min
+                </MudButton>
+            </MudTooltip>
+        </MudStack>
+    }
+
+    <MudText Typo="Typo.h6" Class="mb-2">Active alarms</MudText>
+    @if (_alarms.Count == 0)
+    {
+        <MudAlert Severity="Severity.Success" Class="mb-4">No active alarms — the building is healthy.</MudAlert>
+    }
+    else
+    {
+        <MudStack Spacing="2" Class="mb-4">
+            @foreach (var alarm in _alarms)
+            {
+                <MudAlert Severity="@(alarm.Severity == "critical" ? Severity.Error : Severity.Warning)">
+                    <strong>@alarm.Message</strong>
+                    <MudText Typo="Typo.caption">
+                        @alarm.Type · since @alarm.RaisedUtc.ToLocalTime().ToString("h:mm:ss tt")
+                    </MudText>
+                </MudAlert>
+            }
+        </MudStack>
+    }
+
+    @if (_zones.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info">
+            No building model yet. Start the edge engine (<code>edge_agent --local</code>) —
+            the model loads with the first status snapshot.
+        </MudAlert>
+    }
+    else
+    {
+        @foreach (var floor in Floors)
+        {
+            <MudText Typo="Typo.h6" Class="mt-4 mb-2">Floor @floor.Key</MudText>
+
+            @* Floor plan: rooms colored by equipment state, red outline = fault/alarm *@
+            <svg viewBox="0 0 640 110" class="floor-plan" role="img"
+                 aria-label="Floor @floor.Key plan">
+                @{ var rooms = floor.OrderBy(z => z.ZoneId).ToList(); }
+                @for (var i = 0; i < rooms.Count; i++)
+                {
+                    var zone = rooms[i];
+                    var x = 10 + i * (620.0 / rooms.Count);
+                    var width = 620.0 / rooms.Count - 10;
+                    <rect x="@x" y="10" width="@width" height="70" rx="6"
+                          fill="@PlanFill(zone.State)"
+                          stroke="@(IsUnhealthy(zone) ? "#b91c1c" : "#94a3b8")"
+                          stroke-width="@(IsUnhealthy(zone) ? 3 : 1)" />
+                    @* Razor reserves <text>, so SVG labels are emitted as markup *@
+                    @((MarkupString)PlanLabel(x + width / 2, zone))
+                }
+            </svg>
+
+            <MudGrid>
+                @foreach (var zone in floor.OrderBy(z => z.ZoneId))
+                {
+                    <MudItem xs="12" md="6">
+                        <MudCard Outlined="@zone.Faults.Any()">
+                            <MudCardHeader>
+                                <CardHeaderContent>
+                                    <MudText Typo="Typo.h6">@zone.DisplayName</MudText>
+                                    <MudText Typo="Typo.caption">@zone.ZoneId</MudText>
+                                </CardHeaderContent>
+                                <CardHeaderActions>
+                                    <MudChip T="string" Color="@StateColor(zone.State)" Size="Size.Small">
+                                        @StateLabel(zone.State)
+                                    </MudChip>
+                                </CardHeaderActions>
+                            </MudCardHeader>
+                            <MudCardContent>
+                                <MudStack Row="true" Spacing="6" Class="mb-2">
+                                    <MudStack Spacing="0">
+                                        <MudText Typo="Typo.caption">Temperature</MudText>
+                                        <MudText Typo="Typo.h5">@zone.TempF.ToString("0.0")°F</MudText>
+                                    </MudStack>
+                                    <MudStack Spacing="0">
+                                        <MudText Typo="Typo.caption">Target</MudText>
+                                        <MudText Typo="Typo.h5">@zone.SetpointF.ToString("0.#")°F</MudText>
+                                    </MudStack>
+                                    <MudStack Spacing="0">
+                                        <MudText Typo="Typo.caption">Occupancy</MudText>
+                                        <MudText Typo="Typo.body1">@(zone.Occupied ? "Occupied" : "After hours")</MudText>
+                                    </MudStack>
+                                </MudStack>
+
+                                @if (Math.Abs(zone.SensorTempF - zone.TempF) > 1.0)
+                                {
+                                    <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-2">
+                                        The sensor reads @zone.SensorTempF.ToString("0.0")°F but the room is
+                                        actually @zone.TempF.ToString("0.0")°F — the controller is being lied to.
+                                    </MudAlert>
+                                }
+
+                                <MudText Typo="Typo.caption" Class="mb-1">Fault injection</MudText>
+                                <MudStack Spacing="0">
+                                    <MudSwitch T="bool" Color="Color.Error" Label="Disconnect temperature sensor"
+                                               Value="@zone.Faults.Contains("sensorOffline")"
+                                               ValueChanged="@(on => ToggleFaultAsync(zone.ZoneId, "sensorOffline", on))" />
+                                    <MudSwitch T="bool" Color="Color.Error" Label="Drift the sensor (lies plausibly)"
+                                               Value="@zone.Faults.Contains("sensorDrift")"
+                                               ValueChanged="@(on => ToggleFaultAsync(zone.ZoneId, "sensorDrift", on))" />
+                                    <MudSwitch T="bool" Color="Color.Error" Label="Stick the damper"
+                                               Value="@zone.Faults.Contains("damperStuck")"
+                                               ValueChanged="@(on => ToggleFaultAsync(zone.ZoneId, "damperStuck", on))" />
+                                    <MudSwitch T="bool" Color="Color.Error" Label="Chatter the damper (intermittent)"
+                                               Value="@zone.Faults.Contains("damperChatter")"
+                                               ValueChanged="@(on => ToggleFaultAsync(zone.ZoneId, "damperChatter", on))" />
+                                    <MudSwitch T="bool" Color="Color.Error" Label="Overload the HVAC unit"
+                                               Value="@zone.Faults.Contains("hvacOverload")"
+                                               ValueChanged="@(on => ToggleFaultAsync(zone.ZoneId, "hvacOverload", on))" />
+                                    <MudSwitch T="bool" Color="Color.Error" Label="Leak refrigerant (slow decay)"
+                                               Value="@zone.Faults.Contains("refrigerantLeak")"
+                                               ValueChanged="@(on => ToggleFaultAsync(zone.ZoneId, "refrigerantLeak", on))" />
+                                </MudStack>
+                            </MudCardContent>
+                        </MudCard>
+                    </MudItem>
+                }
+            </MudGrid>
+        }
+
+        <MudText Typo="Typo.h6" Class="mt-6 mb-2">Incident timeline</MudText>
+        @if (_timeline.Count == 0)
+        {
+            <MudText Typo="Typo.body2">Nothing yet — inject a fault and the flight recorder starts filling up.</MudText>
+        }
+        else
+        {
+            <MudList T="string" Dense="true">
+                @foreach (var entry in _timeline)
+                {
+                    <MudListItem T="string" Icon="@TimelineIcon(entry.Kind)"
+                                 IconColor="@TimelineColor(entry.Kind)">
+                        <MudText Typo="Typo.body2">@entry.Description</MudText>
+                        <MudText Typo="Typo.caption">
+                            @entry.ZoneId · @entry.Timestamp.ToLocalTime().ToString("MMM d, h:mm:ss tt")
+                        </MudText>
+                    </MudListItem>
+                }
+            </MudList>
+        }
+    }
+}
+
+@code {
+    private readonly Dictionary<string, ZoneState> _zones = new();
+    private List<ActiveAlarm> _alarms = new();
+    private List<TimelineEvent> _timeline = new();
+    private List<ScenarioInfo> _scenarios = new();
+    private string? _loadError;
+
+    private IEnumerable<IGrouping<int, ZoneState>> Floors =>
+        _zones.Values.GroupBy(z => z.Floor).OrderBy(g => g.Key);
+
+    protected override async Task OnInitializedAsync()
+    {
+        SignalR.ZoneStateChanged += OnZoneStateChanged;
+        SignalR.AlarmsChanged += OnAlarmsChanged;
+        try
+        {
+            foreach (var zone in await Api.GetZonesAsync())
+            {
+                _zones[zone.ZoneId] = zone;
+            }
+            _alarms = await Api.GetAlarmsAsync();
+            _timeline = await Api.GetTimelineAsync();
+            _scenarios = await Api.GetScenariosAsync();
+            await SignalR.StartAsync();
+        }
+        catch (Exception ex)
+        {
+            _loadError = ex.Message;
+        }
+    }
+
+    private void OnZoneStateChanged(ZoneState zone)
+    {
+        _zones[zone.ZoneId] = zone;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void OnAlarmsChanged(List<ActiveAlarm> alarms)
+    {
+        _alarms = alarms;
+        _ = InvokeAsync(async () =>
+        {
+            // An alarm change means the timeline grew — refresh the flight recorder.
+            try { _timeline = await Api.GetTimelineAsync(); } catch { /* next event retries */ }
+            StateHasChanged();
+        });
+    }
+
+    private async Task ToggleFaultAsync(string zoneId, string fault, bool on)
+    {
+        try
+        {
+            if (on)
+            {
+                await Api.InjectFaultAsync(zoneId, fault);
+                Snackbar.Add($"Fault injected: {FaultLabel(fault)}. Watch the alarms.", Severity.Warning);
+            }
+            else
+            {
+                await Api.ClearFaultAsync(zoneId, fault);
+                Snackbar.Add($"Fault cleared: {FaultLabel(fault)}. Recovery in progress.", Severity.Info);
+            }
+
+            // Optimistic update — the engine's next status snapshot confirms it.
+            if (_zones.TryGetValue(zoneId, out var zone))
+            {
+                if (on && !zone.Faults.Contains(fault)) zone.Faults.Add(fault);
+                if (!on) zone.Faults.Remove(fault);
+            }
+            try { _timeline = await Api.GetTimelineAsync(); } catch { /* non-fatal */ }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Couldn't send the fault command: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task RunScenarioAsync(ScenarioInfo scenario)
+    {
+        try
+        {
+            await Api.RunScenarioAsync(scenario.Name);
+            Snackbar.Add($"Scenario started: {scenario.Title}. Watch the alarms and timeline.",
+                Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Couldn't start the scenario: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ReplayAsync()
+    {
+        try
+        {
+            await Api.ReplayAsync();
+            Snackbar.Add("Replaying the last 10 minutes of commands against the engine.",
+                Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Couldn't start the replay: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private bool IsUnhealthy(ZoneState zone) =>
+        zone.Faults.Any() || _alarms.Any(a => a.ZoneId == zone.ZoneId);
+
+    private static string PlanLabel(double centerX, ZoneState zone)
+    {
+        var cx = centerX.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+        var name = System.Net.WebUtility.HtmlEncode(zone.DisplayName);
+        var detail = $"{zone.TempF:0.0}°F · {StateLabel(zone.State)}";
+        return $"<text x=\"{cx}\" y=\"38\" text-anchor=\"middle\" class=\"plan-name\">{name}</text>" +
+               $"<text x=\"{cx}\" y=\"62\" text-anchor=\"middle\" class=\"plan-temp\">{detail}</text>";
+    }
+
+    private static string PlanFill(string state) => state switch
+    {
+        "cooling" => "#bfdbfe",
+        "heating" => "#fed7aa",
+        _ => "#e2e8f0",
+    };
+
+    private static string FaultLabel(string fault) => fault switch
+    {
+        "sensorOffline" => "sensor disconnected",
+        "sensorDrift" => "sensor drifting",
+        "damperStuck" => "damper stuck",
+        "hvacOverload" => "HVAC overloaded",
+        "refrigerantLeak" => "refrigerant leaking",
+        _ => fault,
+    };
+
+    private static Color StateColor(string state) => state switch
+    {
+        "cooling" => Color.Info,
+        "heating" => Color.Warning,
+        _ => Color.Default,
+    };
+
+    private static string StateLabel(string state) => state switch
+    {
+        "cooling" => "Cooling",
+        "heating" => "Heating",
+        "idle" => "Holding steady",
+        _ => state,
+    };
+
+    private static string TimelineIcon(string kind) => kind switch
+    {
+        "command" => Icons.Material.Filled.Send,
+        "alarm-raised" => Icons.Material.Filled.Warning,
+        "alarm-cleared" => Icons.Material.Filled.CheckCircle,
+        _ => Icons.Material.Filled.Circle,
+    };
+
+    private static Color TimelineColor(string kind) => kind switch
+    {
+        "command" => Color.Primary,
+        "alarm-raised" => Color.Error,
+        "alarm-cleared" => Color.Success,
+        _ => Color.Default,
+    };
+
+    public void Dispose()
+    {
+        SignalR.ZoneStateChanged -= OnZoneStateChanged;
+        SignalR.AlarmsChanged -= OnAlarmsChanged;
+    }
+}

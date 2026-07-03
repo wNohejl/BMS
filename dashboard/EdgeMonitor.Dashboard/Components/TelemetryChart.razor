@@ -1,0 +1,64 @@
+@* Lightweight SVG line chart with area fill — no JS charting dependency needed. *@
+
+@if (Points.Count < 2)
+{
+    <p class="chart-empty">Not enough data yet — leave the agent running and check back.</p>
+}
+else
+{
+    <div class="chart-frame">
+        <svg viewBox="0 0 640 240" class="telemetry-chart" preserveAspectRatio="none">
+            @* gridlines at quarter heights *@
+            @foreach (var y in new[] { 65.0, 120.0, 175.0 })
+            {
+                <line x1="0" y1="@y" x2="640" y2="@y" class="gridline" />
+            }
+            <polygon points="@AreaPoints" class="chart-area" />
+            <polyline fill="none" points="@LinePoints" class="chart-line" />
+        </svg>
+        <div class="chart-legend">
+            <span>Low: <strong>@Min.ToString("0.#") @Unit</strong></span>
+            <span>High: <strong>@Max.ToString("0.#") @Unit</strong></span>
+            <span>@Points.Count readings</span>
+        </div>
+        <div class="chart-timespan">
+            <span>@Ordered.First().Timestamp.ToLocalTime().ToString("MMM d, h:mm tt")</span>
+            <span>@Ordered.Last().Timestamp.ToLocalTime().ToString("MMM d, h:mm tt")</span>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public List<ReadingEvent> Points { get; set; } = new();
+    [Parameter] public string Unit { get; set; } = "";
+
+    private List<ReadingEvent> Ordered => Points.OrderBy(p => p.Timestamp).ToList();
+    private double Min => Points.Min(p => p.Value);
+    private double Max => Points.Max(p => p.Value);
+
+    private string LinePoints => string.Join(" ", Coordinates());
+
+    private string AreaPoints
+    {
+        get
+        {
+            var coords = Coordinates();
+            return string.Join(" ", coords) + " 640,230 0,230";
+        }
+    }
+
+    private List<string> Coordinates()
+    {
+        var ordered = Ordered;
+        var min = Min;
+        var range = Math.Max(Max - min, 0.001);
+        var coords = new List<string>(ordered.Count);
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            var x = 640.0 * i / (ordered.Count - 1);
+            var y = 220.0 - 200.0 * (ordered[i].Value - min) / range;
+            coords.Add($"{x:0.#},{y:0.#}");
+        }
+        return coords;
+    }
+}

@@ -1,0 +1,171 @@
+@page "/control"
+@implements IDisposable
+@inject ApiClient Api
+@inject SignalRService SignalR
+@inject ISnackbar Snackbar
+
+<PageTitle>EdgeMonitor — Control</PageTitle>
+
+<MudText Typo="Typo.h4" GutterBottom="true">Zone control</MudText>
+<MudText Typo="Typo.body2" Class="mb-4">
+    Changes go straight to the building: this page → API → edge engine → equipment.
+    The chip shows what the equipment is actually doing right now.
+</MudText>
+
+@if (_loadError is not null)
+{
+    <MudAlert Severity="Severity.Error">Couldn't reach the API: @_loadError</MudAlert>
+}
+else if (_zones.Count == 0)
+{
+    <MudAlert Severity="Severity.Info">
+        No zone status yet. Start the edge engine (<code>edge_agent --local</code>) —
+        the first status snapshot arrives within a few seconds.
+    </MudAlert>
+}
+else
+{
+    <MudGrid>
+        @foreach (var zone in _zones.Values.OrderBy(z => z.ZoneId))
+        {
+            <MudItem xs="12" md="6">
+                <MudCard>
+                    <MudCardHeader>
+                        <CardHeaderContent>
+                            <MudText Typo="Typo.h6">@zone.DisplayName</MudText>
+                        </CardHeaderContent>
+                        <CardHeaderActions>
+                            <MudChip T="string" Color="@StateColor(zone.State)" Size="Size.Small">
+                                @StateLabel(zone.State)
+                            </MudChip>
+                        </CardHeaderActions>
+                    </MudCardHeader>
+                    <MudCardContent>
+                        <MudStack Row="true" Spacing="6" Class="mb-2">
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.caption">Right now</MudText>
+                                <MudText Typo="Typo.h5">@zone.TempF.ToString("0.0")°F</MudText>
+                            </MudStack>
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.caption">Target</MudText>
+                                <MudText Typo="Typo.h5">@zone.SetpointF.ToString("0.#")°F</MudText>
+                            </MudStack>
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.caption">Schedule</MudText>
+                                <MudText Typo="Typo.body1">
+                                    @(zone.Mode == "manual" ? "Manual hold" : zone.Occupied ? "Occupied" : "After hours")
+                                </MudText>
+                            </MudStack>
+                        </MudStack>
+
+                        <MudText Typo="Typo.caption">Set temperature</MudText>
+                        <MudSlider T="double" Min="60" Max="85" Step="0.5"
+                                   @bind-Value="_draftSetpoints[zone.ZoneId]"
+                                   ValueLabel="true" Color="Color.Primary" />
+                        <MudText Typo="Typo.body2" Align="Align.Center">
+                            @_draftSetpoints[zone.ZoneId].ToString("0.#")°F
+                        </MudText>
+                    </MudCardContent>
+                    <MudCardActions>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                   OnClick="() => ApplySetpointAsync(zone.ZoneId)">
+                            Hold this temperature
+                        </MudButton>
+                        <MudButton Variant="Variant.Text" Disabled="@(zone.Mode != "manual")"
+                                   OnClick="() => BackToScheduleAsync(zone.ZoneId)">
+                            Back to schedule
+                        </MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@code {
+    private readonly Dictionary<string, ZoneState> _zones = new();
+    private readonly Dictionary<string, double> _draftSetpoints = new();
+    private string? _loadError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        SignalR.ZoneStateChanged += OnZoneStateChanged;
+        try
+        {
+            foreach (var zone in await Api.GetZonesAsync())
+            {
+                _zones[zone.ZoneId] = zone;
+                _draftSetpoints.TryAdd(zone.ZoneId, zone.SetpointF);
+            }
+            await SignalR.StartAsync();
+        }
+        catch (Exception ex)
+        {
+            _loadError = ex.Message;
+        }
+    }
+
+    private void OnZoneStateChanged(ZoneState zone)
+    {
+        // Preserve locally-known config (mode) when a status-only event arrives.
+        if (_zones.TryGetValue(zone.ZoneId, out var existing) && string.IsNullOrEmpty(zone.Mode))
+        {
+            zone.Mode = existing.Mode;
+        }
+        _zones[zone.ZoneId] = zone;
+        _draftSetpoints.TryAdd(zone.ZoneId, zone.SetpointF);
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ApplySetpointAsync(string zoneId)
+    {
+        try
+        {
+            var value = _draftSetpoints[zoneId];
+            await Api.SetSetpointAsync(zoneId, value);
+            if (_zones.TryGetValue(zoneId, out var zone))
+            {
+                zone.Mode = "manual";
+            }
+            Snackbar.Add($"{PlainEnglish.Zone(zoneId)} will hold {value:0.#}°F.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Couldn't send the change: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task BackToScheduleAsync(string zoneId)
+    {
+        try
+        {
+            await Api.ClearSetpointAsync(zoneId);
+            if (_zones.TryGetValue(zoneId, out var zone))
+            {
+                zone.Mode = "schedule";
+            }
+            Snackbar.Add($"{PlainEnglish.Zone(zoneId)} is back on its schedule.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Couldn't send the change: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private static Color StateColor(string state) => state switch
+    {
+        "cooling" => Color.Info,
+        "heating" => Color.Warning,
+        _ => Color.Default,
+    };
+
+    private static string StateLabel(string state) => state switch
+    {
+        "cooling" => "Cooling",
+        "heating" => "Heating",
+        "idle" => "Holding steady",
+        _ => state,
+    };
+
+    public void Dispose() => SignalR.ZoneStateChanged -= OnZoneStateChanged;
+}

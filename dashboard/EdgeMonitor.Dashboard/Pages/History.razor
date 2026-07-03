@@ -1,0 +1,125 @@
+@page "/history"
+@inject ApiClient Api
+
+<PageTitle>EdgeMonitor — History &amp; costs</PageTitle>
+
+<h1>History &amp; energy costs</h1>
+
+<div class="filter-row">
+    <label>
+        Area
+        <select @bind="_zoneId" @bind:after="ReloadAsync">
+            <option value="zone-1">Zone 1</option>
+            <option value="zone-2">Zone 2</option>
+            <option value="building">Whole building</option>
+        </select>
+    </label>
+    <label>
+        Measurement
+        <select @bind="_sensorType" @bind:after="ReloadAsync">
+            <option value="temperature">Temperature</option>
+            <option value="power">Power use</option>
+            <option value="occupancy">People inside</option>
+        </select>
+    </label>
+    <label>
+        Time range
+        <select @bind="_days" @bind:after="ReloadAsync">
+            <option value="1">Last 24 hours</option>
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+        </select>
+    </label>
+</div>
+
+@if (_loading)
+{
+    <p>Loading readings…</p>
+}
+else if (_loadError is not null)
+{
+    <p class="error">Couldn't load history: @_loadError</p>
+}
+else
+{
+    <TelemetryChart Points="_readings" Unit="@UnitLabel" />
+
+    @if (_costComputed)
+    {
+        <h2>Estimated energy cost</h2>
+        <EnergyCostWidget Delta="_costDelta" KwhDelta="_kwhDelta" RatePerKwh="RatePerKwh" />
+    }
+}
+
+@code {
+    private const decimal RatePerKwh = 0.14m;
+
+    private string _zoneId = "zone-1";
+    private string _sensorType = "temperature";
+    private int _days = 7;
+
+    private List<ReadingEvent> _readings = new();
+    private bool _loading = true;
+    private string? _loadError;
+
+    private bool _costComputed;
+    private decimal _costDelta;
+    private double _kwhDelta;
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        _loadError = null;
+        try
+        {
+            var now = DateTime.UtcNow;
+            _readings = await Api.GetHistoryAsync(_zoneId, _sensorType,
+                now.AddDays(-_days), now);
+
+            await ComputeEnergyCostAsync(now);
+        }
+        catch (Exception ex)
+        {
+            _loadError = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    // Estimate: average kW over each period × hours in the period = kWh.
+    // Good enough for "this period cost you about $X more" — the message that
+    // matters to a building owner, not a utility-grade meter reading.
+    private async Task ComputeEnergyCostAsync(DateTime nowUtc)
+    {
+        _costComputed = false;
+
+        var current = await Api.GetHistoryAsync(_zoneId, "power", nowUtc.AddDays(-_days), nowUtc);
+        var previous = await Api.GetHistoryAsync(_zoneId, "power",
+            nowUtc.AddDays(-2 * _days), nowUtc.AddDays(-_days));
+
+        if (current.Count == 0 || previous.Count == 0)
+        {
+            return;
+        }
+
+        var hours = _days * 24.0;
+        var currentKwh = current.Average(r => r.Value) * hours;
+        var previousKwh = previous.Average(r => r.Value) * hours;
+
+        _kwhDelta = currentKwh - previousKwh;
+        _costDelta = (decimal)_kwhDelta * RatePerKwh;
+        _costComputed = true;
+    }
+
+    private string UnitLabel => _sensorType switch
+    {
+        "temperature" => "°F",
+        "power" => "kW",
+        "occupancy" => "people",
+        _ => "",
+    };
+}

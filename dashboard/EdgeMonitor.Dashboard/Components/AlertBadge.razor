@@ -1,0 +1,14 @@
+@* Plain-English alert notification — shows exactly what the API's
+   plainEnglishMessage says, e.g. "Zone 2 temperature is 79.4°F — above your alert level of 78°F." *@
+
+<div class="alert-badge">
+    <span class="alert-icon">⚠</span>
+    <div class="alert-body">
+        <span class="alert-message">@Alert.PlainEnglishMessage</span>
+        <span class="alert-time">@Alert.Timestamp.ToLocalTime().ToString("MMM d, h:mm tt")</span>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public AlertEvent Alert { get; set; } = default!;
+}

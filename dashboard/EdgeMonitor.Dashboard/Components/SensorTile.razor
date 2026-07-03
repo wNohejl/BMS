@@ -1,0 +1,38 @@
+@* Live sensor tile. Plain-English test: "Zone 2 is 74°F — normal",
+   never "SensorType: Temperature, Value: 74.2". *@
+
+<div class="sensor-tile @StatusClass">
+    <span class="tile-icon" aria-hidden="true">@Icon</span>
+    <span class="tile-zone">@PlainEnglish.Metric(Reading.SensorType)</span>
+    <span class="tile-value">@PlainEnglish.Value(Reading)</span>
+    @if (StatusText.Length > 0)
+    {
+        <span class="tile-status">@StatusText</span>
+    }
+    <span class="tile-time">Updated @Reading.Timestamp.ToLocalTime().ToString("h:mm:ss tt")</span>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ReadingEvent Reading { get; set; } = default!;
+
+    private string Icon => Reading.SensorType switch
+    {
+        "temperature" => "🌡️",
+        "power" => "⚡",
+        "occupancy" => "👥",
+        _ => "📟",
+    };
+
+    private (string Text, string Css) Status => Reading.SensorType switch
+    {
+        "temperature" when Reading.Value > 78 => ("Running warm", "warn"),
+        "temperature" when Reading.Value < 66 => ("Running cool", "warn"),
+        "temperature" => ("Normal", "ok"),
+        "power" when Reading.Value > 15 => ("Higher than usual", "warn"),
+        "power" => ("Normal", "ok"),
+        _ => ("", "ok"),
+    };
+
+    private string StatusText => Status.Text;
+    private string StatusClass => Status.Css;
+}

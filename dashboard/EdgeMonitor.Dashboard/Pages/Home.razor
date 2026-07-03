@@ -1,0 +1,133 @@
+@page "/"
+@implements IDisposable
+@inject ApiClient Api
+@inject SignalRService SignalR
+
+<PageTitle>EdgeMonitor — Overview</PageTitle>
+
+<header class="page-header">
+    <h1>Building overview</h1>
+    <p class="connection-status @(SignalR.IsConnected ? "live" : "connecting")">
+        @(SignalR.IsConnected ? "● Live — tiles update as new readings arrive" : "○ Connecting to the building…")
+    </p>
+</header>
+
+@if (_liveAlerts.Count > 0)
+{
+    <div class="alert-list home-alerts">
+        @foreach (var alert in _liveAlerts)
+        {
+            <AlertBadge Alert="alert" />
+        }
+    </div>
+}
+
+@if (_loadError is not null)
+{
+    <p class="error">Couldn't reach the API: @_loadError. Is it running? (see docs/local-dev-setup.md)</p>
+}
+else if (_tiles.Count == 0)
+{
+    <div class="empty-state">
+        <p><strong>No readings yet.</strong></p>
+        <p>Start the edge agent (<code>edge_agent --local</code>) and the first batch will appear within 30 seconds.</p>
+    </div>
+}
+else
+{
+    <div class="summary-strip">
+        <div class="summary-card">
+            <span class="summary-label">Average temperature</span>
+            <span class="summary-value">@(AverageTemp is double t ? $"{t:0}°F" : "—")</span>
+        </div>
+        <div class="summary-card">
+            <span class="summary-label">Total power draw</span>
+            <span class="summary-value">@(TotalPower is double p ? $"{p:0.0} kW" : "—")</span>
+        </div>
+        <div class="summary-card">
+            <span class="summary-label">Power cost right now</span>
+            <span class="summary-value">@(TotalPower is double c ? $"{(decimal)c * RatePerKwh:C2}/hr" : "—")</span>
+        </div>
+        <div class="summary-card">
+            <span class="summary-label">People inside</span>
+            <span class="summary-value">@(Occupancy is double o ? $"{o:0}" : "—")</span>
+        </div>
+    </div>
+
+    @foreach (var zoneGroup in _tiles.Values
+        .GroupBy(t => t.ZoneId)
+        .OrderBy(g => g.Key == "building" ? 1 : 0)
+        .ThenBy(g => g.Key))
+    {
+        <section class="zone-section">
+            <h2>@PlainEnglish.Zone(zoneGroup.Key)</h2>
+            <div class="tile-grid">
+                @foreach (var reading in zoneGroup.OrderBy(r => r.SensorType))
+                {
+                    @* @key on the timestamp recreates the tile per update, replaying the pulse animation *@
+                    <div @key="@($"{reading.ZoneId}|{reading.SensorType}|{reading.Timestamp.Ticks}")">
+                        <SensorTile Reading="reading" />
+                    </div>
+                }
+            </div>
+        </section>
+    }
+}
+
+@code {
+    private const decimal RatePerKwh = 0.14m;
+
+    private readonly Dictionary<string, ReadingEvent> _tiles = new();
+    private readonly List<AlertEvent> _liveAlerts = new();
+    private string? _loadError;
+
+    private double? AverageTemp => Values("temperature") is { Count: > 0 } t ? t.Average() : null;
+    private double? TotalPower => Values("power") is { Count: > 0 } p ? p.Sum() : null;
+    private double? Occupancy => Values("occupancy") is { Count: > 0 } o ? o.Sum() : null;
+
+    private List<double> Values(string sensorType) =>
+        _tiles.Values.Where(r => r.SensorType == sensorType).Select(r => r.Value).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        SignalR.ReadingReceived += OnReadingReceived;
+        SignalR.AlertTriggered += OnAlertTriggered;
+
+        try
+        {
+            foreach (var reading in await Api.GetLatestAsync())
+            {
+                _tiles[Key(reading)] = reading;
+            }
+            await SignalR.StartAsync();
+        }
+        catch (Exception ex)
+        {
+            _loadError = ex.Message;
+        }
+    }
+
+    private void OnReadingReceived(ReadingEvent reading)
+    {
+        _tiles[Key(reading)] = reading;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void OnAlertTriggered(AlertEvent alert)
+    {
+        _liveAlerts.Insert(0, alert);
+        if (_liveAlerts.Count > 3)
+        {
+            _liveAlerts.RemoveAt(_liveAlerts.Count - 1);
+        }
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private static string Key(ReadingEvent r) => $"{r.ZoneId}|{r.SensorType}";
+
+    public void Dispose()
+    {
+        SignalR.ReadingReceived -= OnReadingReceived;
+        SignalR.AlertTriggered -= OnAlertTriggered;
+    }
+}

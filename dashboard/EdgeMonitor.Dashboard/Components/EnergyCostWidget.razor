@@ -1,0 +1,16 @@
+@* Shows the energy cost delta in dollars — the one metric building owners care about.
+   "This month: +14% vs last month = ~$47 extra" *@
+
+<div class="cost-widget">
+    <span class="label">This period vs the previous period</span>
+    <span class="delta @(Delta > 0 ? "higher" : "lower")">
+        @(Delta > 0 ? "+" : "")@Delta.ToString("C0") estimated
+    </span>
+    <span class="detail">Based on a @KwhDelta.ToString("0") kWh difference at @RatePerKwh.ToString("C2")/kWh</span>
+</div>
+
+@code {
+    [Parameter] public decimal Delta { get; set; }
+    [Parameter] public double KwhDelta { get; set; }
+    [Parameter] public decimal RatePerKwh { get; set; } = 0.14m;
+}

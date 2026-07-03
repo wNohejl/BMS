@@ -1,0 +1,18 @@
+{
+  "$schema-version": "0.0.1",
+  "description": "EdgeMonitor C++ telemetry agent — reads sensors via ISensorReader and publishes batched MQTT payloads to Azure IoT Hub",
+  "image": {
+    "repository": "ghcr.io/YOUR_GITHUB_USERNAME/edgemonitor-edge-agent",
+    "tag": {
+      "version": "0.0.1",
+      "platforms": {
+        "amd64": "./Dockerfile"
+      }
+    },
+    "buildOptions": []
+  },
+  "language": "c",
+  "platforms": {
+    "amd64": "./Dockerfile"
+  }
+}

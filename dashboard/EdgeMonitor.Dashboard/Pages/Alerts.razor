@@ -1,0 +1,153 @@
+@page "/alerts"
+@implements IDisposable
+@inject ApiClient Api
+@inject SignalRService SignalR
+
+<PageTitle>EdgeMonitor — Alerts</PageTitle>
+
+<h1>Alerts</h1>
+
+@if (_recentAlerts.Count > 0)
+{
+    <h2>Happening now</h2>
+    <div class="alert-list">
+        @foreach (var alert in _recentAlerts)
+        {
+            <AlertBadge Alert="alert" />
+        }
+    </div>
+}
+
+<h2>Add an alert</h2>
+<p class="hint">Example: "Tell me when Zone 2 temperature goes above 78°F."</p>
+
+<EditForm Model="_newAlert" OnValidSubmit="CreateAlertAsync" class="alert-form">
+    <span>Tell me when</span>
+    <InputSelect @bind-Value="_newAlert.ZoneId">
+        <option value="zone-1">Zone 1</option>
+        <option value="zone-2">Zone 2</option>
+        <option value="building">the whole building</option>
+    </InputSelect>
+    <InputSelect @bind-Value="_newAlert.SensorType">
+        <option value="temperature">temperature</option>
+        <option value="power">power use</option>
+        <option value="occupancy">people inside</option>
+    </InputSelect>
+    <span>goes</span>
+    <InputSelect @bind-Value="_newAlert.Condition">
+        <option value="above">above</option>
+        <option value="below">below</option>
+    </InputSelect>
+    <InputNumber @bind-Value="_newAlert.ThresholdValue" step="0.5" />
+    <span>@ThresholdUnit</span>
+    <button type="submit">Add alert</button>
+</EditForm>
+
+@if (_saveError is not null)
+{
+    <p class="error">@_saveError</p>
+}
+
+<h2>Your alerts</h2>
+@if (_rules.Count == 0)
+{
+    <p>No alerts set up yet.</p>
+}
+else
+{
+    <ul class="rule-list">
+        @foreach (var rule in _rules)
+        {
+            <li>
+                <span>@Describe(rule)</span>
+                <button class="link-button" @onclick="() => DeleteAlertAsync(rule.Id)">Remove</button>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    private readonly List<AlertEvent> _recentAlerts = new();
+    private List<AlertRule> _rules = new();
+    private CreateAlertRequest _newAlert = new();
+    private string? _saveError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        SignalR.AlertTriggered += OnAlertTriggered;
+        try
+        {
+            _rules = await Api.GetAlertsAsync();
+            await SignalR.StartAsync();
+        }
+        catch (Exception ex)
+        {
+            _saveError = $"Couldn't reach the API: {ex.Message}";
+        }
+    }
+
+    private void OnAlertTriggered(AlertEvent alert)
+    {
+        _recentAlerts.Insert(0, alert);
+        if (_recentAlerts.Count > 10)
+        {
+            _recentAlerts.RemoveAt(_recentAlerts.Count - 1);
+        }
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CreateAlertAsync()
+    {
+        _saveError = null;
+        try
+        {
+            var created = await Api.CreateAlertAsync(_newAlert);
+            if (created is not null)
+            {
+                _rules.Insert(0, created);
+            }
+            _newAlert = new CreateAlertRequest();
+        }
+        catch (Exception ex)
+        {
+            _saveError = $"Couldn't save the alert: {ex.Message}";
+        }
+    }
+
+    private async Task DeleteAlertAsync(int id)
+    {
+        try
+        {
+            await Api.DeleteAlertAsync(id);
+            _rules.RemoveAll(r => r.Id == id);
+        }
+        catch (Exception ex)
+        {
+            _saveError = $"Couldn't remove the alert: {ex.Message}";
+        }
+    }
+
+    // "Tell me when Zone 2 temperature goes above 78°F" — plain English, always.
+    private static string Describe(AlertRule rule)
+    {
+        var unit = rule.SensorType switch
+        {
+            "temperature" => "°F",
+            "power" => " kW",
+            "occupancy" => " people",
+            _ => "",
+        };
+        return $"Tell me when {PlainEnglish.Zone(rule.ZoneId)} {PlainEnglish.Metric(rule.SensorType)} " +
+               $"goes {rule.Condition} {rule.ThresholdValue:0.#}{unit}";
+    }
+
+    private string ThresholdUnit => _newAlert.SensorType switch
+    {
+        "temperature" => "°F",
+        "power" => "kW",
+        "occupancy" => "people",
+        _ => "",
+    };
+
+    public void Dispose() => SignalR.AlertTriggered -= OnAlertTriggered;
+}
