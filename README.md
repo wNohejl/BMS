@@ -124,6 +124,14 @@ faults at the device layer; the engine's alarm monitor detects the *symptoms*
 (it's never told what broke), controllers fail-safe where needed, and everything
 recovers when the fault clears. Full walkthrough: [docs/digital-twin.md](docs/digital-twin.md)
 
+## Tooling
+
+Built AI-assisted (Claude Code) — visible in commit trailers, stated here on purpose.
+The architecture, design decisions, phase plan, and verification gates are mine; the
+assistant accelerates implementation the way a good pair does. Every claim in this
+README is backed by the CI gate above (45 C++ self-test checks + 27 .NET tests on
+every push), not by trust in whoever — or whatever — typed the code.
+
 ## Cost posture
 
 Everything through Phase 5 runs on free tiers — IoT Hub F1, Container Apps free grant,
