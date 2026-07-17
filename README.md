@@ -1,5 +1,7 @@
 # EdgeMonitor — Building Management System Digital Twin
 
+[![ci](https://github.com/wNohejl/BMS/actions/workflows/ci.yml/badge.svg)](https://github.com/wNohejl/BMS/actions/workflows/ci.yml)
+
 > A Building Management System digital twin built with **C++** (control engine +
 > physics-like simulation), **C#/.NET 8** (orchestration, APIs, SignalR), **Blazor
 > WASM + MudBlazor** (dashboard), and **PostgreSQL** — deployable entirely on Azure
@@ -7,7 +9,11 @@
 > disconnected sensor, a stuck damper, an overloaded HVAC unit — and watch alarms,
 > control decisions, and recovery happen in real time.
 
-**Live demo:** _add your Azure Static Web App URL here after Phase 3_
+**Status:** local pipeline complete and verified (45 C++ self-test checks, 27 .NET
+tests, fault-injection e2e). The Azure footprint is fully authored as IaC
+([infra/main.bicep](infra/main.bicep) — IoT Hub F1, Container Apps, SignalR, Static
+Web Apps, $10 cost alert) and deliberately not provisioned yet: the portfolio phase
+stays at $0, and `az deployment group create` turns it on when wanted.
 
 ## What it does
 
@@ -82,6 +88,33 @@ deployment/  IoT Edge manifest            docs/     architecture, costs, BACnet,
 dotnet test api/EdgeMonitor.Api.sln     # 27 tests: telemetry, alerts, control, alarms, timeline, scenarios
 ./edge/build/edge_agent --selftest     # 45 checks: state machine, fault physics, alarms, SPSC ring, model
 ```
+
+## Code tour (the interesting parts, in reading order)
+
+For reviewers and interviewers — the five files that carry the engineering weight:
+
+1. **[edge/src/SpscRing.h](edge/src/SpscRing.h)** — lock-free single-producer/single-consumer
+   ring buffer bridging the 10 Hz physics thread into the 1 Hz control loop. Fixed
+   capacity, acquire/release memory ordering, no mutexes on the hot path;
+   stress-tested cross-thread with 100k items in the self-test.
+2. **[edge/src/ZoneStateMachine.cpp](edge/src/ZoneStateMachine.cpp)** — per-zone HVAC
+   state machine with hysteresis bands and equipment-protection hold times (a real
+   compressor can't short-cycle; neither can this one).
+3. **[edge/src/AlarmMonitor.cpp](edge/src/AlarmMonitor.cpp)** — behavior-based fault
+   detection by analytical redundancy: the monitor compares observed behavior against
+   the thermal model's expectation, so a *drifting* sensor that stays in-range is still
+   caught. Alarm debounce keeps chatter out. It is never told what broke — it infers.
+4. **[edge/src/BuildingSimulation.cpp](edge/src/BuildingSimulation.cpp)** — the
+   closed-loop thermal model standing in for real hardware behind
+   `ISensorReader`/`IDeviceActuator`, which is also exactly where
+   [BACnet](docs/bacnet-integration.md) plugs in for real buildings.
+5. **[api/EdgeMonitor.Api](api/EdgeMonitor.Api)** — the .NET 8 side: ingestion,
+   command channel back down to the C++ engine, PostgreSQL persistence with an audit
+   trail, and SignalR fan-out to the Blazor dashboard.
+
+The C++/.NET boundary is the point: telemetry flows up (C++ → MQTT/local channel →
+.NET → SignalR → browser), commands flow down (browser → REST → .NET → C++ actuators),
+and each side plays to its strength.
 
 ## Digital twin
 

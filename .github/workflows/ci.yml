@@ -1,0 +1,29 @@
+# CI gate: C++ engine self-test + .NET API tests on every push.
+# The engine builds without the Azure IoT SDK (local mode) so CI needs no secrets.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  cpp-engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build edge agent (local mode)
+        run: cmake -S edge -B edge/build -DCMAKE_BUILD_TYPE=Release && cmake --build edge/build --config Release
+      - name: Run engine self-test (45 checks)
+        run: ./edge/build/edge_agent --selftest
+
+  dotnet-api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Run API tests (27 tests)
+        run: dotnet test api/EdgeMonitor.Api.sln --nologo
