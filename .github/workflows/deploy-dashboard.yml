@@ -1,14 +1,13 @@
 # Deploys the Blazor WASM dashboard to Azure Static Web Apps (free tier).
 # Setup: create the Static Web App (see infra/main.bicep), then add its
 # deployment token as the AZURE_STATIC_WEB_APPS_API_TOKEN repo secret.
+#
+# Manual-only until the SWA is provisioned — a push-triggered run without the
+# token just paints a misleading red X on the Actions tab. Restore the push
+# trigger (branches: [main], paths: dashboard/**) when Azure is turned on.
 name: Deploy dashboard
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "dashboard/**"
-      - ".github/workflows/deploy-dashboard.yml"
   workflow_dispatch:
 
 jobs:
